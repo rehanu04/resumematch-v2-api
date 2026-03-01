@@ -1,6 +1,6 @@
 ﻿from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from pydantic import BaseModel
-from app.core.security import require_app_key
+from app.core.security import require_app_key`nfrom app.core.config import settings
 import re
 
 from app.services.pdf_extract import extract_text_from_pdf
@@ -71,7 +71,7 @@ async def analyze_pdf(
     result = _analyze_text(resume_text, jd_text)
     result["resume_text_length"] = len(resume_text)
 
-    if debug:
+    if debug and settings.analyze_debug_enabled:
         resume_tokens = tokenize_list(resume_text)
         jd_tokens = tokenize_list(jd_text)
         result["debug"] = {
