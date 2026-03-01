@@ -1,7 +1,7 @@
 ﻿from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from pydantic import BaseModel
-from app.core.security import require_app_key`nfrom app.core.config import settings
-import re
+from app.core.security import require_app_key
+from app.core.config import settings
 
 from app.services.pdf_extract import extract_text_from_pdf
 
