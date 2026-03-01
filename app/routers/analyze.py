@@ -9,11 +9,18 @@ class AnalyzeRequest(BaseModel):
     resume_text: str
     jd_text: str
 
-_word_re = re.compile(r"[a-z0-9]+")  # simple, robust for v0
+_word_re = re.compile(r"[a-z0-9]+")  # simple v0
+
+_STOP = {
+    "and","or","the","a","an","to","of","in","on","for","with","as","is","are","be","by","at",
+    "we","you","your","our","they","their","need","needs","required","requirements","must",
+    "experience","years","year","role","job","work","working","ability","skills","skill"
+}
 
 def tokenize(s: str) -> set[str]:
     s = s.lower()
-    return {w for w in _word_re.findall(s) if len(w) >= 3}
+    toks = {w for w in _word_re.findall(s) if len(w) >= 3}
+    return {w for w in toks if w not in _STOP}
 
 @router.post("/analyze")
 def analyze(payload: AnalyzeRequest, _=Depends(require_app_key)):
