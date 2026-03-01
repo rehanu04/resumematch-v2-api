@@ -36,3 +36,8 @@ async def rate_limit(request: Request):
 
     iq.append(now)
     kq.append(now)
+
+
+def debug_state():
+    return {"ip_keys": len(_ip_hits), "key_keys": len(_key_hits)}
+
