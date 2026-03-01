@@ -7,6 +7,8 @@ from app.services.pdf_extract import extract_text_from_pdf
 
 router = APIRouter(prefix="/v1", tags=["analyze"])
 
+import re
+
 _word_re = re.compile(r"[a-z0-9]+")
 _STOP = {
     "and","or","the","a","an","to","of","in","on","for","with","as","is","are","be","by","at",
