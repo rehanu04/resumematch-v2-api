@@ -2,7 +2,7 @@
 from collections import defaultdict, deque
 
 WINDOW_SECONDS = 60
-MAX_PER_KEY = 30  # keep low for verification; we'll raise later
+MAX_PER_KEY = 120  # keep low for verification; we'll raise later
 
 _key_hits = defaultdict(deque)
 
