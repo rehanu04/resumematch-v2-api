@@ -2,14 +2,11 @@
 from collections import defaultdict, deque
 from fastapi import Request, HTTPException
 
-# Simple in-memory sliding window rate limiter
 WINDOW_SECONDS = 60
 
-# tune these:
-MAX_PER_IP = 60
-MAX_PER_KEY = 120
+# Key-based only (reliable behind proxies)
+MAX_PER_KEY = 30
 
-_ip_hits = defaultdict(deque)
 _key_hits = defaultdict(deque)
 
 def _prune(q: deque, now: float):
@@ -19,25 +16,15 @@ def _prune(q: deque, now: float):
 
 async def rate_limit(request: Request):
     now = time.time()
-
-    ip = request.client.host if request.client else "unknown"
     key = request.headers.get("X-App-Key", "no-key")
 
-    iq = _ip_hits[ip]
-    kq = _key_hits[key]
+    q = _key_hits[key]
+    _prune(q, now)
 
-    _prune(iq, now)
-    _prune(kq, now)
+    if len(q) >= MAX_PER_KEY:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
-    if len(iq) >= MAX_PER_IP:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded (IP)")
-    if len(kq) >= MAX_PER_KEY:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded (Key)")
-
-    iq.append(now)
-    kq.append(now)
-
+    q.append(now)
 
 def debug_state():
-    return {"ip_keys": len(_ip_hits), "key_keys": len(_key_hits)}
-
+    return {"key_keys": len(_key_hits)}
