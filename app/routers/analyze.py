@@ -14,10 +14,17 @@ _STOP = {
     "experience","years","year","role","job","work","working","ability","skills","skill"
 }
 
-def tokenize(s: str) -> set[str]:
+def tokenize_list(s: str) -> list[str]:
     s = s.lower()
-    toks = {w for w in _word_re.findall(s) if len(w) >= 3}
-    return {w for w in toks if w not in _STOP}
+    toks = [w for w in _word_re.findall(s) if len(w) >= 3 and w not in _STOP]
+    # unique but keep order
+    seen = set()
+    out = []
+    for t in toks:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
 
 class AnalyzeRequest(BaseModel):
     resume_text: str
@@ -30,6 +37,7 @@ def analyze(payload: AnalyzeRequest, _=Depends(require_app_key)):
 @router.post("/analyze/pdf")
 async def analyze_pdf(
     jd_text: str = Form(...),
+    debug: bool = Form(False),
     resume: UploadFile = File(...),
     _=Depends(require_app_key),
 ):
@@ -46,11 +54,21 @@ async def analyze_pdf(
 
     result = _analyze_text(resume_text, jd_text)
     result["resume_text_length"] = len(resume_text)
+
+    if debug:
+        resume_tokens = tokenize_list(resume_text)
+        jd_tokens = tokenize_list(jd_text)
+        result["debug"] = {
+            "resume_text_preview": resume_text[:500],
+            "resume_tokens_sample": resume_tokens[:30],
+            "jd_tokens_sample": jd_tokens[:30],
+        }
+
     return result
 
 def _analyze_text(resume_text: str, jd_text: str):
-    jd_tokens = tokenize(jd_text)
-    resume_tokens = tokenize(resume_text)
+    jd_tokens = set(tokenize_list(jd_text))
+    resume_tokens = set(tokenize_list(resume_text))
 
     if not jd_tokens:
         return {"score": 0, "matched_count": 0, "missing_count": 0, "matched_top": [], "missing_top": []}
