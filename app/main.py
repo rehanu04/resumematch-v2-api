@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+﻿from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.routers.health import router as health_router
@@ -24,5 +24,4 @@ app.include_router(ping_router)
 app.include_router(jd_router)
 app.include_router(net_router)
 app.include_router(analyze_router)
-
 app.include_router(resume_router)
