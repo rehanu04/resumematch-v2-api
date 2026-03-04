@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.routers.health import router as health_router
@@ -6,6 +6,7 @@ from app.routers.ping import router as ping_router
 from app.routers.jd import router as jd_router
 from app.routers.net import router as net_router
 from app.routers.analyze import router as analyze_router
+from app.routers.resume import router as resume_router
 
 from app.core.ratelimit import check_and_record
 
@@ -23,3 +24,5 @@ app.include_router(ping_router)
 app.include_router(jd_router)
 app.include_router(net_router)
 app.include_router(analyze_router)
+
+app.include_router(resume_router)
