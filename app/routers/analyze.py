@@ -83,6 +83,16 @@ TRANSFERABLE_HINTS: dict[str, tuple[str, ...]] = {
     "problem solving": ("debug", "optimiz", "improv", "fix"),
 }
 
+# Pre-compiled regex patterns — avoids repeated compilation on every request
+_COMPILED_TECH: dict[str, tuple[re.Pattern[str], ...]] = {
+    label: tuple(re.compile(expr) for expr in exprs)
+    for label, exprs in TECH_PATTERNS.items()
+}
+_COMPILED_SOFT: dict[str, tuple[re.Pattern[str], ...]] = {
+    label: tuple(re.compile(expr) for expr in exprs)
+    for label, exprs in SOFT_PATTERNS.items()
+}
+
 
 class AnalyzeRequest(BaseModel):
     resume_text: str
@@ -118,8 +128,8 @@ async def analyze_pdf(
     if debug and settings.analyze_debug_enabled:
         result["debug"] = {
             "resume_text_preview": resume_text[:500],
-            "resume_detected_skills": _extract_matches(resume_text, TECH_PATTERNS),
-            "jd_detected_skills": _extract_matches(jd_text, TECH_PATTERNS),
+            "resume_detected_skills": _extract_matches(resume_text, _COMPILED_TECH),
+            "jd_detected_skills": _extract_matches(jd_text, _COMPILED_TECH),
             "jd_keywords_sample": _extract_keywords(jd_text)[:30],
         }
 
@@ -144,9 +154,14 @@ def _normalize_text(text: str) -> str:
 
 
 def _tokenize(text: str) -> list[str]:
-    tokens = []
+    return _tokenize_norm(_normalize_text(text))
+
+
+def _tokenize_norm(norm: str) -> list[str]:
+    """Tokenize already-normalised (lowercased) text, skipping stop-words."""
+    tokens: list[str] = []
     seen: set[str] = set()
-    for token in _WORD_RE.findall(_normalize_text(text)):
+    for token in _WORD_RE.findall(norm):
         if len(token) < 3 or token in _STOP:
             continue
         if token not in seen:
@@ -156,13 +171,14 @@ def _tokenize(text: str) -> list[str]:
 
 
 
-def _extract_matches(text: str, patterns: dict[str, tuple[str, ...]]) -> list[str]:
+def _extract_matches(text: str, patterns: dict[str, tuple[re.Pattern[str], ...]]) -> list[str]:
     norm = _normalize_text(text)
-    found: list[str] = []
-    for label, exprs in patterns.items():
-        if any(re.search(expr, norm) for expr in exprs):
-            found.append(label)
-    return found
+    return [label for label, exprs in patterns.items() if any(p.search(norm) for p in exprs)]
+
+
+def _extract_matches_norm(norm: str, patterns: dict[str, tuple[re.Pattern[str], ...]]) -> list[str]:
+    """Like _extract_matches but accepts already-normalised text to avoid redundant work."""
+    return [label for label, exprs in patterns.items() if any(p.search(norm) for p in exprs)]
 
 
 
@@ -176,11 +192,22 @@ def _extract_lines(text: str) -> list[str]:
 
 
 
-def _extract_keywords(jd_text: str) -> list[str]:
-    tokens = _tokenize(jd_text)
-    counts = Counter(_WORD_RE.findall(_normalize_text(jd_text)))
+def _extract_keywords(
+    jd_text: str,
+    jd_tech: list[str] | None = None,
+    jd_soft: list[str] | None = None,
+    tokens: list[str] | None = None,
+) -> list[str]:
+    if tokens is None:
+        tokens = _tokenize(jd_text)
+    norm = _normalize_text(jd_text)
+    counts = Counter(_WORD_RE.findall(norm))
     frequent = [tok for tok, count in counts.items() if tok not in _STOP and len(tok) >= 4 and count >= 2]
-    combined = _extract_matches(jd_text, TECH_PATTERNS) + _extract_matches(jd_text, SOFT_PATTERNS) + frequent + tokens[:20]
+    if jd_tech is None:
+        jd_tech = _extract_matches(jd_text, _COMPILED_TECH)
+    if jd_soft is None:
+        jd_soft = _extract_matches(jd_text, _COMPILED_SOFT)
+    combined = jd_tech + jd_soft + frequent + tokens[:20]
     seen: set[str] = set()
     out: list[str] = []
     for item in combined:
@@ -204,8 +231,7 @@ def _extract_priority_lines(jd_text: str) -> tuple[list[str], list[str]]:
 
 
 
-def _score_overlap(items: Iterable[str], resume_text: str) -> tuple[list[str], list[str]]:
-    norm_resume = _normalize_text(resume_text)
+def _score_overlap(items: Iterable[str], norm_resume: str) -> tuple[list[str], list[str]]:
     matched: list[str] = []
     missing: list[str] = []
     for item in items:
@@ -218,8 +244,7 @@ def _score_overlap(items: Iterable[str], resume_text: str) -> tuple[list[str], l
 
 
 
-def _transferable_matches(missing_items: Iterable[str], resume_text: str) -> list[dict[str, str]]:
-    norm_resume = _normalize_text(resume_text)
+def _transferable_matches(missing_items: Iterable[str], norm_resume: str) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     for item in missing_items:
         hints = TRANSFERABLE_HINTS.get(item.lower(), ())
@@ -278,8 +303,15 @@ def _analyze_text(resume_text: str, jd_text: str) -> dict:
     jd_text = jd_text or ""
     resume_text = resume_text or ""
 
-    jd_tokens = set(_tokenize(jd_text))
-    resume_tokens = set(_tokenize(resume_text))
+    # Normalize once and reuse throughout — avoids redundant lowercasing/regex passes
+    norm_jd = _normalize_text(jd_text)
+    norm_resume = _normalize_text(resume_text)
+
+    jd_token_list = _tokenize_norm(norm_jd)
+    resume_token_list = _tokenize_norm(norm_resume)
+
+    jd_tokens = set(jd_token_list)
+    resume_tokens = set(resume_token_list)
 
     if not jd_tokens:
         return {
@@ -299,10 +331,10 @@ def _analyze_text(resume_text: str, jd_text: str) -> dict:
             "recommendations": [],
         }
 
-    jd_tech = _extract_matches(jd_text, TECH_PATTERNS)
-    jd_soft = _extract_matches(jd_text, SOFT_PATTERNS)
-    resume_tech = _extract_matches(resume_text, TECH_PATTERNS)
-    resume_soft = _extract_matches(resume_text, SOFT_PATTERNS)
+    jd_tech = _extract_matches_norm(norm_jd, _COMPILED_TECH)
+    jd_soft = _extract_matches_norm(norm_jd, _COMPILED_SOFT)
+    resume_tech = _extract_matches_norm(norm_resume, _COMPILED_TECH)
+    resume_soft = _extract_matches_norm(norm_resume, _COMPILED_SOFT)
 
     must_lines, nice_lines = _extract_priority_lines(jd_text)
     nice_norm = _normalize_text("\n".join(nice_lines))
@@ -318,14 +350,14 @@ def _analyze_text(resume_text: str, jd_text: str) -> dict:
     must_have_skills = list(dict.fromkeys(must_have_skills))
     nice_to_have_skills = list(dict.fromkeys([s for s in nice_to_have_skills if s not in must_have_skills]))
 
-    matched_must, missing_must = _score_overlap(must_have_skills, resume_text)
-    matched_nice, missing_nice = _score_overlap(nice_to_have_skills, resume_text)
-    matched_soft, missing_soft = _score_overlap(jd_soft, resume_text)
+    matched_must, missing_must = _score_overlap(must_have_skills, norm_resume)
+    matched_nice, missing_nice = _score_overlap(nice_to_have_skills, norm_resume)
+    matched_soft, missing_soft = _score_overlap(jd_soft, norm_resume)
 
     matched_keywords = sorted(jd_tokens.intersection(resume_tokens))
     missing_keywords = sorted(jd_tokens.difference(resume_tokens))
 
-    transferable = _transferable_matches(missing_must + missing_soft, resume_text)
+    transferable = _transferable_matches(missing_must + missing_soft, norm_resume)
 
     def pct(found: int, total: int) -> int:
         return int((found / total) * 100) if total else 0
@@ -338,7 +370,7 @@ def _analyze_text(resume_text: str, jd_text: str) -> dict:
     score = int(round((must_score * 0.5) + (nice_score * 0.15) + (keyword_score * 0.25) + (soft_score * 0.10)))
 
     gaps = list(dict.fromkeys(missing_must + missing_soft + missing_nice))
-    keywords = _extract_keywords(jd_text)
+    keywords = _extract_keywords(jd_text, jd_tech=jd_tech, jd_soft=jd_soft, tokens=jd_token_list)
 
     matched_requirements = [
         {"requirement": item, "type": "must_have"} for item in matched_must
