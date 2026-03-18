@@ -340,13 +340,26 @@ def _build_modern_pdf(payload: ResumePdfRequest) -> bytes:
 
         if img is not None:
             try:
-                img_w = 54
-                img_h = 54
-                img_x = page_w - margin_x - img_w
+                # 🚀 FIXED: Circular Profile Picture Logic
+                img_size = 54
+                img_x = page_w - margin_x - img_size
                 img_y = page_h - 74
+                
+                c.saveState()
+                # Create a clipping path for the circle
+                path = c.beginPath()
+                center_x = img_x + (img_size / 2)
+                center_y = img_y + (img_size / 2)
+                path.circle(center_x, center_y, (img_size / 2))
+                c.clipPath(path, stroke=0, fill=0)
+                
+                # Draw white background for circle
                 c.setFillColor(colors.white)
-                c.roundRect(img_x - 3, img_y - 3, img_w + 6, img_h + 6, 8, fill=1, stroke=0)
-                c.drawImage(img, img_x, img_y, width=img_w, height=img_h, preserveAspectRatio=True, mask="auto")
+                c.circle(center_x, center_y, (img_size / 2), fill=1, stroke=0)
+                
+                # Draw the image (it will be clipped to the circle)
+                c.drawImage(img, img_x, img_y, width=img_size, height=img_size, preserveAspectRatio=True, mask="auto")
+                c.restoreState()
             except Exception:
                 pass
         return page_h - header_h - 18
@@ -365,7 +378,10 @@ def _build_modern_pdf(payload: ResumePdfRequest) -> bytes:
         return cur_y
 
     def draw_section(title: str, cur_y: float) -> float:
-        cur_y = ensure_space(cur_y, 30)
+        # 🚀 FIXED: Spacing buffer to prevent header overlap
+        cur_y -= 12 
+        cur_y = ensure_space(cur_y, 35)
+        
         c.setFillColor(soft_color)
         c.roundRect(x, cur_y - 6, maxw, 20, 8, fill=1, stroke=0)
         c.setFillColor(accent_color)
@@ -383,6 +399,7 @@ def _build_modern_pdf(payload: ResumePdfRequest) -> bytes:
             c.setFont("Helvetica", body_size)
             c.drawString(x, y, ln)
             y -= line_gap
+        y -= 4 # Extra padding after summary
 
     skills = _prioritize_skills(payload.skills, payload.jd_text)
     if skills:
@@ -393,6 +410,7 @@ def _build_modern_pdf(payload: ResumePdfRequest) -> bytes:
             c.setFont("Helvetica", body_size)
             c.drawString(x, y, ln)
             y -= line_gap
+        y -= 4 # Extra padding after skills
 
     for title, block in [
         ("Experience", payload.experience_text),
